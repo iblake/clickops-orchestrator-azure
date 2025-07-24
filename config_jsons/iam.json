@@ -1,0 +1,6 @@
+{
+  "resource_group": {
+    "name": "rg-free-demo",
+    "location": "eastus"
+  }
+} 

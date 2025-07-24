@@ -1,0 +1,14 @@
+{
+  "security": {
+    "rules": [
+      {
+        "name": "SSH",
+        "port": 22,
+        "protocol": "Tcp",
+        "source": "*",
+        "priority": 1000,
+        "description": "Allow SSH access"
+      }
+    ]
+  }
+} 

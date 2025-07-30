@@ -24,14 +24,14 @@ on:
           - staging
           - prod
 
+env:
+  TF_ACTION_WORKSPACE: default
+  SCENARIO: azure
+  CORE_MODULE_VERSION: v0.0.17
+
 jobs:
   projects:
     name: project
-    env:
-      TF_ACTION_WORKSPACE: default
-      SCENARIO: azure
-      CORE_MODULE_VERSION: v0.0.17
-
     runs-on: self-hosted
     permissions:
       pull-requests: write
@@ -39,7 +39,7 @@ jobs:
 
     steps:
     # ------------------------------------------------------------------
-    # 1.  Checkout & basic tooling
+    # 1. Checkout & tooling
     # ------------------------------------------------------------------
     - name: Checkout
       uses: actions/checkout@v4
@@ -50,13 +50,14 @@ jobs:
         node-version: '20'
 
     # ------------------------------------------------------------------
-    # 2.  Clone orchestrator (Azure flavour)
+    # 2. Clone Azure orchestrator
     # ------------------------------------------------------------------
     - name: Clone Orchestrator Module
-      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+      run: |
+        git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
     # ------------------------------------------------------------------
-    # 3.  Azure service-principal login (unchanged)
+    # 3. Azure credentials
     # ------------------------------------------------------------------
     - name: Export ARM credentials
       run: |
@@ -74,66 +75,29 @@ jobs:
         az account set --subscription ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
     # ------------------------------------------------------------------
-    # 4.  Terraform binary
+    # 4. Terraform binary
     # ------------------------------------------------------------------
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.6.6   # matches required_version >= 1.6
+        terraform_version: 1.9.8
         terraform_wrapper: true
 
     # ------------------------------------------------------------------
-    # 5.  Generate providers.tf + versions.tf with OCI back-end
+    # 5. Render versions.tf from template
     # ------------------------------------------------------------------
-    - name: Setup OCI back-end
+    - name: Render versions.tf from template
+      working-directory: ${{ github.workspace }}/ORCH
       run: |
-        cat > ${{ github.workspace }}/ORCH/providers.tf <<'EOF'
-        terraform {
-          required_version = ">= 1.6"
-          required_providers {
-            azurerm = {
-              source  = "hashicorp/azurerm"
-              version = "~> 4.37"
-            }
-            null = {
-              source  = "hashicorp/null"
-              version = "~> 3.2"
-            }
-            oci = {
-              source = "oracle/oci"
-              version = "~> 5.0"
-            }
-          }
-
-          backend "oci" {
-            bucket    = "__BUCKET__"
-            namespace = "__NAMESPACE__"
-            region    = "__REGION__"
-            auth      = "InstancePrincipal"
-            key       = "azure-orchestrator.tfstate"
-          }
-        }
-
-        provider "azurerm" {
-          features {}
-        }
-
-        provider "oci" {
-          auth = "InstancePrincipal"
-        }
-        EOF
-
-        sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" \
-               ${{ github.workspace }}/ORCH/providers.tf
-        sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" \
-               ${{ github.workspace }}/ORCH/providers.tf
-        sed -i "s|__REGION__|${{ vars.REGION }}|g" \
-               ${{ github.workspace }}/ORCH/providers.tf
-
-        terraform fmt ${{ github.workspace }}/ORCH/providers.tf
+        envsubst < versions.tf.template > versions.tf
+        terraform fmt versions.tf
+      env:
+        OCI_TF_STATE_BUCKET:   ${{ vars.OCI_TF_STATE_BUCKET }}
+        OCI_TF_STATE_NAMESPACE:${{ vars.OCI_TF_STATE_NAMESPACE }}
+        OCI_REGION:            ${{ vars.REGION }}
 
     # ------------------------------------------------------------------
-    # 6.  SSH key (unchanged)
+    # 6. SSH key
     # ------------------------------------------------------------------
     - name: Generate SSH Key
       id: ssh-key
@@ -145,7 +109,7 @@ jobs:
         echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
     # ------------------------------------------------------------------
-    # 7.  Terraform workflow (unchanged)
+    # 7. Terraform workflow
     # ------------------------------------------------------------------
     - name: Terraform Init
       id: init

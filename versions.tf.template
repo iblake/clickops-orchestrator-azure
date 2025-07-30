@@ -1,0 +1,34 @@
+terraform {
+  required_version = ">= 1.9"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.37"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
+    oci = {
+      source  = "oracle/oci"
+      version = "~> 5.0"
+    }
+  }
+
+  backend "oci" {
+    bucket    = "${OCI_TF_STATE_BUCKET}"
+    namespace = "${OCI_TF_STATE_NAMESPACE}"
+    region    = "${OCI_REGION}"
+    auth      = "InstancePrincipal"
+    key       = "azure-orchestrator.tfstate"
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+
+provider "oci" {
+  auth = "InstancePrincipal"
+}

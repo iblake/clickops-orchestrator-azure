@@ -94,7 +94,7 @@ jobs:
       env:
         OCI_TF_STATE_BUCKET:    ${{ vars.OCI_TF_STATE_BUCKET }}
         OCI_TF_STATE_NAMESPACE: ${{ vars.OCI_TF_STATE_NAMESPACE }}
-        OCI_REGION:             ${{ vars.REGION }}
+        OCI_REGION:             ${{ vars.OCI_REGION }}
 
     # ------------------------------------------------------------------
     # 6. SSH key

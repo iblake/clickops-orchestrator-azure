@@ -1,19 +1,34 @@
-name: Azure Terraform pipeline
+name: Azure Terraform Orchestrator Pipeline (OCI Pattern)
 
 on:
   push:
     branches:
       - main
+      - feature/orchestrator-modular
     paths:
-      - 'azure/**'
+      - 'config/**'        # ✅ JSON configuration files
+      - '*.tf'             # ✅ Terraform files  
+      - 'locals.tf'        # ✅ JSON processing logic
+      - 'variables.tf'     # ✅ Variable definitions
   pull_request:
     branches:
       - main
     paths:
-      - 'azure/**'
+      - 'config/**'        # ✅ JSON configuration files
+      - '*.tf'             # ✅ Terraform files
+      - 'locals.tf'        # ✅ JSON processing logic  
+      - 'variables.tf'     # ✅ Variable definitions
 
   workflow_dispatch:
     inputs:
+      deployment_type:
+        description: "Deployment Type"
+        required: true
+        default: "new_resources"
+        type: choice
+        options:
+          - new_resources      # CASO 1: Recursos nuevos (JSON files -> crear todo)
+          - existing_resources # CASO 2: Recursos existentes (JSON files -> solo VM)
       env:
         description: "Environment"
         required: true
@@ -24,141 +39,145 @@ on:
           - staging
           - prod
 
-jobs:
-  projects:
-    name: project
-    env:
-      TF_ACTION_WORKSPACE: default
-      SCENARIO: azure
-      CORE_MODULE_VERSION: v0.0.17
+env:
+  TF_LOG: INFO
 
+jobs:
+  orchestrator:
+    name: 'Azure Orchestrator (OCI Pattern)'
+    env:
+      TF_ACTION_WORKSPACE: "default"
+      DEPLOYMENT_TYPE: ${{ github.event.inputs.deployment_type || 'new_resources' }}
+            
     runs-on: self-hosted
     permissions:
       pull-requests: write
+      actions: read
       contents: read
-
+    
     steps:
-    # Checkout the repository
-    - name: Checkout
+    # Checkout the repository to the GitHub Actions runner
+    - name: 'Checkout'
       uses: actions/checkout@v4
 
-    # Node
-    - name: Setup Node
-      uses: actions/setup-node@v2
+    # Runner package dependencies  
+    - uses: actions/setup-node@v2
       with:
-        node-version: '20'
+        node-version: '20'  
 
-    # Clone orchestrator module
-    - name: Clone Orchestrator Module
-      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+    # Azure Login using OIDC
+    - name: 'Setup Azure Authentication'
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # Export ARM Service-Principal credentials (no OIDC)
-    - name: Export ARM credentials
-      run: |
-        echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
-        echo "ARM_CLIENT_SECRET=${{ secrets.ARM_CLIENT_SECRET }}" >> $GITHUB_ENV
-        echo "ARM_TENANT_ID=${{ secrets.ARM_TENANT_ID }}" >> $GITHUB_ENV
-        echo "ARM_SUBSCRIPTION_ID=${{ secrets.ARM_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-
-    # Login to Azure CLI using Service Principal
-    - name: Azure CLI Login
-      run: |
-        az login --service-principal \
-          --username ${{ secrets.ARM_CLIENT_ID }} \
-          --password ${{ secrets.ARM_CLIENT_SECRET }} \
-          --tenant ${{ secrets.ARM_TENANT_ID }}
-        az account set --subscription ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
-    # Install Terraform
-    - name: Setup Terraform
+    # Setup Terraform Binary
+    - name: 'Setup Terraform'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Setup Terraform backend using OCI Object Storage (exact OCI pattern)
-    - name: Setup Orchestrator OCI Backend for Azure
-      id: backend
-      run: |
-        cat > ${{ github.workspace }}/ORCH/versions.tf << EOF
-        terraform {
-          required_providers {
-            azurerm = {
-              source  = "hashicorp/azurerm"
-              version = "~> 4.37"
-            }
-            null = {
-              source  = "hashicorp/null"
-              version = "~> 3.2"
-            }
-          }
-          required_version = ">= 1.6"
-          
-          backend "oci" {
-            bucket    = "__BUCKET__"
-            namespace = "__NAMESPACE__"
-            auth      = "InstancePrincipal"
-            region    = "__REGION__"
-            key       = "azure-orchestrator.tfstate"
-          }
-        }
-
-        provider "azurerm" {
-          features {}
-        }
-        EOF
-        sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" ${{ github.workspace }}/ORCH/versions.tf
-        sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" ${{ github.workspace }}/ORCH/versions.tf
-        sed -i "s|__REGION__|${{ vars.REGION }}|g" ${{ github.workspace }}/ORCH/versions.tf
-
-    # Generate SSH key idempotently
-    - name: Generate SSH Key
+    # Generate SSH Key for VM Access
+    - name: 'Generate SSH Key for VM'
       id: ssh-key
       run: |
-        KEY_PATH="$HOME/.ssh/azure_vm_key"
-        if [ ! -f "$KEY_PATH" ]; then
-          ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
-        fi
-        echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
+        mkdir -p ~/.ssh
+        ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
+        chmod 600 ~/.ssh/azure_vm_key
+        chmod 644 ~/.ssh/azure_vm_key.pub
+        echo "SSH key generated successfully"
+        ls -la ~/.ssh/azure_vm_key*
 
-    # Terraform Init
-    - name: Terraform Init
+    # ✅ Validar estructura JSON (Patrón OCI)
+    - name: 'Validate JSON Configuration (OCI Pattern)'
+      id: validate-json
+      run: |
+        echo "🔍 Validating OCI Landing Zones JSON structure..."
+        
+        # Verificar estructura de directorios requerida
+        required_dirs=("config/iam" "config/network" "config/security" "config/compute")
+        for dir in "${required_dirs[@]}"; do
+          if [ ! -d "$dir" ]; then
+            echo "❌ Error: Required directory $dir not found"
+            exit 1
+          fi
+          echo "✅ Directory found: $dir"
+        done
+        
+        # Verificar archivos JSON requeridos (OCI pattern)
+        required_files=(
+          "config/iam/resource-groups.json"
+          "config/network/networks.json" 
+          "config/security/security-groups.json"
+          "config/compute/virtual-machines.json"
+        )
+        
+        for json_file in "${required_files[@]}"; do
+          if [ ! -f "$json_file" ]; then
+            echo "❌ Error: Required JSON file $json_file not found"
+            exit 1
+          fi
+          
+          echo "🔍 Validating $json_file..."
+          if ! jq empty "$json_file" 2>/dev/null; then
+            echo "❌ Invalid JSON syntax: $json_file"
+            exit 1
+          fi
+          echo "✅ Valid JSON: $json_file"
+        done
+        
+        echo "🎉 All JSON files validated successfully (OCI pattern)"
+
+    # Landing Zone Terraform Orchestrator initialization
+    - name: 'Terraform Init'
       id: init
       run: |
-        cd ${{ github.workspace }}/ORCH
         terraform init
-
-    # Terraform Format (PR only)
-    - name: Terraform Format
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        ARM_USE_OIDC: true
+    
+    # Integration: Terraform Format
+    - name: 'Terraform Format'
       id: format
       if: github.ref != 'refs/heads/main'
-      run: |
-        cd ${{ github.workspace }}/ORCH
-        terraform fmt -check
-
-    # Terraform Validate (PR only)
-    - name: Terraform Validate
+      run: terraform fmt -check
+      
+    # Test: Terraform Validate
+    - name: 'Terraform Validate'
       id: validate
       if: github.ref != 'refs/heads/main' && (success() || failure())
-      run: |
-        cd ${{ github.workspace }}/ORCH
-        terraform validate -no-color
-
-    # Terraform Plan (PR only)
-    - name: Terraform Plan
+      run: terraform validate -no-color
+      
+    # ✅ Plan usando var-files explícitos (OCI Pattern)
+    - name: 'Terraform Plan (OCI Pattern)'
       id: plan
       if: github.event_name == 'pull_request'
       run: |
-        cd ${{ github.workspace }}/ORCH
-        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-        VARS=$(find $SCENARIO_DIR -name '*.json')
-        echo "$VARS"
-        terraform plan -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        echo "📋 Planning deployment using OCI Landing Zones pattern..."
+        echo "Deployment Type: ${{ env.DEPLOYMENT_TYPE }}"
+        
+        terraform plan -no-color \
+          -var-file=config/iam/resource-groups.json \
+          -var-file=config/network/networks.json \
+          -var-file=config/security/security-groups.json \
+          -var-file=config/compute/virtual-machines.json \
+          --out tfplan.binary
+          
+        echo "✅ Plan completed using explicit var-files"
       env:
-        TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        ARM_USE_OIDC: true
 
-    # Post plan summary as PR comment
-    - name: Update Pull Request
+    # Send result of testing & integration to the pull request
+    - name: 'Update Pull Request'
       uses: actions/github-script@v6
       if: github.event_name == 'pull_request' && (success() || failure())
       env:
@@ -166,40 +185,93 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const output = `#### Terraform Format and Style 🖌\`${{ steps.format.outcome }}\`
-          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
-          <details><summary>Show Plan</summary>
-
+          const planOutput = process.env.PLAN || 'No plan generated';
+          const deploymentType = process.env.DEPLOYMENT_TYPE;
+          
+          const output = `#### 🚀 Azure Orchestrator (OCI Landing Zones Pattern)
+          **Deployment Type**: \`${deploymentType}\`
+          **Pattern**: OCI Landing Zones with explicit var-files
+          
+          #### Terraform Status
+          - **Format**: \`${{ steps.format.outcome }}\`
+          - **Initialization**: \`${{ steps.init.outcome}}\`
+          - **Validation**: \`${{ steps.validate.outcome }}\`
+          - **JSON Configuration**: \`${{ steps.validate-json.outcome }}\`
+          - **Plan**: \`${{ steps.plan.outcome }}\`
+          
+          <details><summary>📖 Show Terraform Plan</summary>
+          
           \`\`\`terraform
-          ${process.env.PLAN}
+          ${planOutput}
           \`\`\`
-
+          
           </details>
-
+          
+          #### 🔧 Commands Used (OCI Pattern)
+          \`\`\`bash
+          terraform plan \\
+            -var-file=config/iam/resource-groups.json \\
+            -var-file=config/network/networks.json \\
+            -var-file=config/security/security-groups.json \\
+            -var-file=config/compute/virtual-machines.json
+          \`\`\`
+          
+          *Mode: ${deploymentType === 'new_resources' ? '📋 CASO 1 - Create All Resources' : '🔗 CASO 2 - Use Existing + New VM'}*
+          
           *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+          
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: output
           })
-
-    # Fail if plan failed
-    - name: Terraform Plan Status
+    
+    # Integration: Show fail status if plan failed
+    - name: 'Terraform Plan Status'
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
-    # Terraform Apply (push to main only)
-    - name: Terraform Apply
+    # ✅ Apply usando var-files explícitos (OCI Pattern)
+    - name: 'Terraform Apply (OCI Pattern)'
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        cd ${{ github.workspace }}/ORCH
-        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-        VARS=$(find $SCENARIO_DIR -name '*.json')
-        echo "$VARS"
-        terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
+        echo "🚀 Applying deployment using OCI Landing Zones pattern..."
+        echo "Deployment Type: ${{ env.DEPLOYMENT_TYPE }}"
+        
+        terraform apply -no-color \
+          -var-file=config/iam/resource-groups.json \
+          -var-file=config/network/networks.json \
+          -var-file=config/security/security-groups.json \
+          -var-file=config/compute/virtual-machines.json \
+          --auto-approve
+          
+        echo "✅ Apply completed using explicit var-files"
       env:
-        TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        ARM_USE_OIDC: true
+      continue-on-error: false
+
+    # ✅ Mostrar outputs estructurados por keys
+    - name: 'Show Terraform Outputs (OCI Pattern)'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🎯 === TERRAFORM OUTPUTS (Structured by Keys) ==="
+        echo ""
+        echo "📋 Resource Groups:"
+        terraform output -json resource_groups 2>/dev/null || echo "No resource groups output"
+        echo ""
+        echo "🌐 Networks:"  
+        terraform output -json networks 2>/dev/null || echo "No networks output"
+        echo ""
+        echo "🔒 Security Groups:"
+        terraform output -json security_groups 2>/dev/null || echo "No security groups output"
+        echo ""
+        echo "💻 Virtual Machines:"
+        terraform output -json virtual_machines 2>/dev/null || echo "No virtual machines output"
+        echo ""
+        echo "🏁 === DEPLOYMENT COMPLETED (OCI Pattern) ==="
+        echo "Mode: ${{ env.DEPLOYMENT_TYPE }}"
+        echo "Pattern: OCI Landing Zones with key-based references"

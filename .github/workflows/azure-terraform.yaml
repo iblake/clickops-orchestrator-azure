@@ -1,5 +1,3 @@
-# .github/workflows/azure-terraform-gitops.yml
-# GitOps 100 %: apply sólo tras PR mergeado y plan validado
 name: Azure Terraform GitOps (OCI back-end)
 
 on:
@@ -8,7 +6,7 @@ on:
       - main
     paths:
       - 'azure/**'
-  pull_request_target:   # para que el apply corra cuando el PR se cierre
+  pull_request_target:
     types:
       - closed
     branches:

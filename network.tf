@@ -15,7 +15,7 @@ data "azurerm_subnet" "existing" {
 }
 
 ################################################################################
-#  Virtual Network & Subnets (AVM Module) - Create from JSON config or override
+#  Virtual Network & Subnets (AVM Module) - Create from JSON config
 ################################################################################
 
 # Get the first network from configuration (simplified for MVP)

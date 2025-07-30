@@ -59,37 +59,37 @@ output "virtual_machines" {
 
 # Legacy outputs for backward compatibility
 output "resource_group_name" {
-  description = "Name of the primary Resource Group (backward compatibility)"
+  description = "Name of the primary Resource Group"
   value       = length(module.resource_group) > 0 ? module.resource_group[0].name : null
 }
 
 output "resource_group_id" {
-  description = "ID of the primary Resource Group (backward compatibility)"
+  description = "ID of the primary Resource Group"
   value       = length(module.resource_group) > 0 ? module.resource_group[0].resource_id : null
 }
 
 output "vnet_name" {
-  description = "Name of the primary Virtual Network (backward compatibility)"
+  description = "Name of the primary Virtual Network"
   value       = length(module.vnet) > 0 ? module.vnet[0].name : null
 }
 
 output "vnet_id" {
-  description = "ID of the primary Virtual Network (backward compatibility)"
+  description = "ID of the primary Virtual Network"
   value       = length(module.vnet) > 0 ? module.vnet[0].resource_id : null
 }
 
 output "subnet_id" {
-  description = "ID of the primary subnet (backward compatibility)"
+  description = "ID of the primary subnet"
   value       = length(module.vnet) > 0 ? module.vnet[0].subnets["subnet-public"].resource_id : null
 }
 
 output "vm_name" {
-  description = "Name of the primary Virtual Machine (backward compatibility)"
+  description = "Name of the primary Virtual Machine"
   value       = length(module.vm) > 0 ? module.vm[0].name : null
 }
 
 output "vm_id" {
-  description = "ID of the primary Virtual Machine (backward compatibility)"
+  description = "ID of the primary Virtual Machine"
   value       = length(module.vm) > 0 ? module.vm[0].resource_id : null
 }
 
@@ -99,12 +99,12 @@ output "vm_network_info" {
 }
 
 output "nsg_name" {
-  description = "Name of the primary Network Security Group (backward compatibility)"
+  description = "Name of the primary Network Security Group"
   value       = length(module.nsg) > 0 ? module.nsg[0].name : null
 }
 
 output "nsg_id" {
-  description = "ID of the primary Network Security Group (backward compatibility)"
+  description = "ID of the primary Network Security Group"
   value       = length(module.nsg) > 0 ? module.nsg[0].resource_id : null
 }
 

@@ -1,5 +1,5 @@
 ################################################################################
-#  Virtual Machine (AVM Module) - Create from JSON config or override
+#  Virtual Machine (AVM Module) - Create from JSON
 ################################################################################
 
 # Get the first VM from configuration (simplified for MVP)

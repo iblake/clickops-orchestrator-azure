@@ -7,7 +7,7 @@ data "azurerm_resource_group" "existing" {
 }
 
 ################################################################################
-#  Resource Group (AVM Module) - Create from JSON config or override
+#  Resource Group (AVM Module) - Create from JSON config
 ################################################################################
 
 # Get the first resource group from configuration (simplified for MVP)

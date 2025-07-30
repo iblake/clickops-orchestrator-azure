@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.10"
+  required_version = ">= 1.12"
 
   required_providers {
     azurerm = {
@@ -25,5 +25,10 @@ terraform {
   }
 }
 
-provider "azurerm" { features {} }
-provider "oci" { auth = "InstancePrincipal" }
+provider "azurerm" {
+  features {}
+}
+
+provider "oci" {
+  auth = "InstancePrincipal"
+}

@@ -76,6 +76,41 @@ jobs:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
+    # Setup Terraform backend using OCI Object Storage (exact OCI pattern)
+    - name: Setup Orchestrator OCI Backend for Azure
+      id: backend
+      run: |
+        cat > ${{ github.workspace }}/ORCH/versions.tf << EOF
+        terraform {
+          required_providers {
+            azurerm = {
+              source  = "hashicorp/azurerm"
+              version = "~> 4.37"
+            }
+            null = {
+              source  = "hashicorp/null"
+              version = "~> 3.2"
+            }
+          }
+          required_version = ">= 1.6"
+          
+          backend "oci" {
+            bucket    = "__BUCKET__"
+            namespace = "__NAMESPACE__"
+            auth      = "InstancePrincipal"
+            region    = "__REGION__"
+            key       = "azure-orchestrator.tfstate"
+          }
+        }
+
+        provider "azurerm" {
+          features {}
+        }
+        EOF
+        sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" ${{ github.workspace }}/ORCH/versions.tf
+        sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" ${{ github.workspace }}/ORCH/versions.tf
+        sed -i "s|__REGION__|${{ vars.REGION }}|g" ${{ github.workspace }}/ORCH/versions.tf
+
     # Generate SSH key idempotently
     - name: Generate SSH Key
       id: ssh-key

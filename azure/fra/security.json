@@ -1,6 +1,0 @@
-{
-  "security": {
-    "existing_nsg_name": "nsg-workloads-prod",
-    "existing_nsg_resource_group": "rg-security-prod"
-  }
-}

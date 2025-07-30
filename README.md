@@ -1,4 +1,46 @@
-# Azure Landing Zones Orchestrator (Free Tier Edition)
+# Azure Landing Zones Orchestrator - Modular Configuration
+
+🚀 **Sistema orquestador modular tipo OCI Landing Zones para Azure, optimizado para free-tier.**
+
+## 📋 Casos de Uso
+
+- **CASO 1**: Crear TODOS los recursos desde cero (Resource Group + VNet + NSG + VM)
+- **CASO 2**: Usar recursos existentes + crear solo VMs
+
+## 🏗️ Arquitectura Modular
+
+```
+config/
+├── iam/resource-groups.json       # Resource Groups
+├── network/networks.json          # VNets y Subnets  
+├── security/security-groups.json  # Network Security Groups
+└── compute/virtual-machines.json  # Virtual Machines
+```
+
+## 🚀 Inicio Rápido
+
+### CASO 1: Recursos Nuevos
+```bash
+# 1. Generar SSH key
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ''
+
+# 2. Desplegar infraestructura completa
+terraform init
+terraform plan
+terraform apply
+```
+
+### CASO 2: Recursos Existentes
+```bash
+# Usando archivo .tfvars
+terraform apply -var-file="examples/caso2-recursos-existentes/existing-resources.tfvars"
+```
+
+## 📖 Documentación
+
+- **[Guía Completa](README-orchestrator.md)**: Documentación detallada con ejemplos
+- **[GitHub Actions Setup](docs/github-actions-setup.md)**: Configuración de CI/CD
+- **[Ejemplos Prácticos](examples/)**: Casos de uso paso a paso
 
 ##  Requirements
 

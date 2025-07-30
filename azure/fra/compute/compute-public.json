@@ -1,9 +1,0 @@
-{
-  "vm": {
-    "name": "vm-azure-clickops",
-    "size": "Standard_B1s",
-    "admin_username": "azureuser",
-    "create_public_ip": true,
-    "public_ip_sku": "Basic"
-  }
-}

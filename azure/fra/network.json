@@ -1,7 +1,0 @@
-{
-  "network": {
-    "existing_vnet_name": "vnet-hub-prod",
-    "existing_subnet_name": "subnet-workloads",
-    "existing_resource_group": "rg-networking-prod"
-  }
-}

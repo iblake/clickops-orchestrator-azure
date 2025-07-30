@@ -55,10 +55,19 @@ jobs:
     # Export ARM Service-Principal credentials (no OIDC)
     - name: Export ARM credentials
       run: |
-        echo "ARM_CLIENT_ID=${{ secrets.CLIENT_ID }}" >> $GITHUB_ENV
-        echo "ARM_CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> $GITHUB_ENV
-        echo "ARM_TENANT_ID=${{ secrets.TENANT_ID }}" >> $GITHUB_ENV
-        echo "ARM_SUBSCRIPTION_ID=${{ secrets.SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+        echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "ARM_CLIENT_SECRET=${{ secrets.ARM_CLIENT_SECRET }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.ARM_TENANT_ID }}" >> $GITHUB_ENV
+        echo "ARM_SUBSCRIPTION_ID=${{ secrets.ARM_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+
+    # Login to Azure CLI using Service Principal
+    - name: Azure CLI Login
+      run: |
+        az login --service-principal \
+          --username ${{ secrets.ARM_CLIENT_ID }} \
+          --password ${{ secrets.ARM_CLIENT_SECRET }} \
+          --tenant ${{ secrets.ARM_TENANT_ID }}
+        az account set --subscription ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
     # Install Terraform
     - name: Setup Terraform
@@ -83,11 +92,6 @@ jobs:
       run: |
         cd ${{ github.workspace }}/ORCH
         terraform init
-      env:
-        ARM_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.TENANT_ID }}
 
     # Terraform Format (PR only)
     - name: Terraform Format
@@ -116,10 +120,6 @@ jobs:
         echo "$VARS"
         terraform plan -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
       env:
-        ARM_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.TENANT_ID }}
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
 
     # Post plan summary as PR comment
@@ -167,8 +167,4 @@ jobs:
         echo "$VARS"
         terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
       env:
-        ARM_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.TENANT_ID }}
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}

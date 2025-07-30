@@ -80,7 +80,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.9.8
+        terraform_version: 1.12.1
         terraform_wrapper: true
 
     # ------------------------------------------------------------------
@@ -92,9 +92,9 @@ jobs:
         envsubst < versions.tf.template > versions.tf
         terraform fmt versions.tf
       env:
-        OCI_TF_STATE_BUCKET:   ${{ vars.OCI_TF_STATE_BUCKET }}
-        OCI_TF_STATE_NAMESPACE:${{ vars.OCI_TF_STATE_NAMESPACE }}
-        OCI_REGION:            ${{ vars.REGION }}
+        OCI_TF_STATE_BUCKET:    ${{ vars.OCI_TF_STATE_BUCKET }}
+        OCI_TF_STATE_NAMESPACE: ${{ vars.OCI_TF_STATE_NAMESPACE }}
+        OCI_REGION:             ${{ vars.REGION }}
 
     # ------------------------------------------------------------------
     # 6. SSH key

@@ -1,18 +1,16 @@
 {
-  "security_groups": {
-    "nsg-web": {
+  "virtual_machines": {
+    "vm-web": {
       "resource_group_key": "rg-demo",
-      "name": "nsg-web",
-      "rules": [
-        {
-          "name": "SSH",
-          "port": 22,
-          "protocol": "Tcp",
-          "source": "*",
-          "priority": 1000,
-          "description": "Allow SSH access"
-        }
-      ]
+      "network_key": "vnet-demo",
+      "subnet_key": "subnet-public",
+      "security_group_key": "nsg-web",
+      "name": "vm-web2",
+      "size": "Standard_B1s",
+      "admin_username": "azureuser",
+      "ssh_key_path": "~/.ssh/azure_vm_key.pub",
+      "create_public_ip": true,
+      "public_ip_sku": "Basic"
     }
   }
 }

@@ -39,6 +39,7 @@ jobs:
     # runs-on: ubuntu-latest
     runs-on: self-hosted
     permissions:
+      id-token: write
       pull-requests: write
       actions: read
       contents: read
@@ -61,15 +62,15 @@ jobs:
               
     # Gather Orchestrator Module
     - name: 'Clone Orchestrator Module'
-      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+      run: git clone --branch feature/orchestrator-modular --single-branch https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
-    # Azure Login using OIDC
-    - name: 'Setup Azure Authentication'
-      uses: azure/login@v2
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    # Azure Login without OIDC
+    - name: Export ARM Service Principal credentials
+      run: |
+        echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "ARM_CLIENT_SECRET=${{ secrets.ARM_CLIENT_SECRET }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.ARM_TENANT_ID }}" >> $GITHUB_ENV
+        echo "ARM_SUBSCRIPTION_ID=${{ secrets.ARM_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
 
     # Setup Terraform Binary
     - name: 'Setup Terraform'
@@ -78,12 +79,15 @@ jobs:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Generate SSH Key for VM Access
+    # Generate SSH Key for VM Access (idempotent)
     - name: 'Generate SSH Key for VM'
       id: ssh-key
       run: |
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
-        echo "SSH_PUBLIC_KEY=$(cat ~/.ssh/azure_vm_key.pub)" >> $GITHUB_OUTPUT
+        KEY_PATH="$HOME/.ssh/azure_vm_key"
+        if [ ! -f "$KEY_PATH" ]; then
+          ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
+        fi
+        echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
     # Landing Zone Terraform Orchestrator and Base Modules initialization
     - name: 'Terraform Init'

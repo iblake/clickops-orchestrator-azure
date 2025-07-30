@@ -5,7 +5,7 @@
       "network_key": "vnet-demo",
       "subnet_key": "subnet-public",
       "security_group_key": "nsg-web",
-      "name": "vm-web",
+      "name": "vm-web23",
       "size": "Standard_B1s",
       "admin_username": "azureuser",
       "ssh_key_path": "~/.ssh/azure_vm_key.pub",

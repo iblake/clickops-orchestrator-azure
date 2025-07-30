@@ -76,11 +76,10 @@ jobs:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Setup Terraform backend using OCI Object Storage (exact OCI pattern)
+ # Setup Terraform backend using OCI Object Storage
     - name: Setup Orchestrator OCI Backend for Azure
-      id: backend
       run: |
-        cat > ${{ github.workspace }}/ORCH/versions.tf << EOF
+        cat > ${{ github.workspace }}/ORCH/versions.tf << 'EOF'
         terraform {
           required_providers {
             azurerm = {
@@ -93,7 +92,7 @@ jobs:
             }
           }
           required_version = ">= 1.6"
-          
+
           backend "oci" {
             bucket    = "__BUCKET__"
             namespace = "__NAMESPACE__"
@@ -107,11 +106,17 @@ jobs:
           features {}
         }
         EOF
-        sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" ${{ github.workspace }}/ORCH/versions.tf
-        sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" ${{ github.workspace }}/ORCH/versions.tf
-        sed -i "s|__REGION__|${{ vars.OCI_REGION }}|g" ${{ github.workspace }}/ORCH/versions.tf
 
-    # Generate SSH key idempotently
+        sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" \
+               ${{ github.workspace }}/ORCH/versions.tf
+        sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" \
+               ${{ github.workspace }}/ORCH/versions.tf
+        sed -i "s|__REGION__|${{ vars.OCI_REGION }}|g" \
+               ${{ github.workspace }}/ORCH/versions.tf
+
+        terraform fmt ${{ github.workspace }}/ORCH/versions.tf
+
+        # Generate SSH key idempotently
     - name: Generate SSH Key
       id: ssh-key
       run: |

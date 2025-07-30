@@ -116,3 +116,8 @@ variable "security_override" {
   })
   default = null
 }
+
+variable "resource_group"   { type = any }
+variable "network"          { type = any }
+variable "vm"               { type = any }
+variable "security"         { type = any }

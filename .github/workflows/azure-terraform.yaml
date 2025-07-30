@@ -1,4 +1,4 @@
-name: Azure Terraform pipeline
+name: Azure Terraform pipeline (OCI back-end)
 
 on:
   push:
@@ -38,21 +38,26 @@ jobs:
       contents: read
 
     steps:
-    # Checkout the repository
+    # ------------------------------------------------------------------
+    # 1.  Checkout & basic tooling
+    # ------------------------------------------------------------------
     - name: Checkout
       uses: actions/checkout@v4
 
-    # Node
     - name: Setup Node
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    # Clone orchestrator module
+    # ------------------------------------------------------------------
+    # 2.  Clone orchestrator (Azure flavour)
+    # ------------------------------------------------------------------
     - name: Clone Orchestrator Module
       run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
-    # Export ARM Service-Principal credentials (no OIDC)
+    # ------------------------------------------------------------------
+    # 3.  Azure service-principal login (unchanged)
+    # ------------------------------------------------------------------
     - name: Export ARM credentials
       run: |
         echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
@@ -60,7 +65,6 @@ jobs:
         echo "ARM_TENANT_ID=${{ secrets.ARM_TENANT_ID }}" >> $GITHUB_ENV
         echo "ARM_SUBSCRIPTION_ID=${{ secrets.ARM_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
 
-    # Login to Azure CLI using Service Principal
     - name: Azure CLI Login
       run: |
         az login --service-principal \
@@ -69,18 +73,23 @@ jobs:
           --tenant ${{ secrets.ARM_TENANT_ID }}
         az account set --subscription ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
-    # Install Terraform
+    # ------------------------------------------------------------------
+    # 4.  Terraform binary
+    # ------------------------------------------------------------------
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.12.1
+        terraform_version: 1.6.6   # matches required_version >= 1.6
         terraform_wrapper: true
 
- # Setup Terraform backend using OCI Object Storage
-    - name: Setup Orchestrator OCI Backend for Azure
+    # ------------------------------------------------------------------
+    # 5.  Generate providers.tf + versions.tf with OCI back-end
+    # ------------------------------------------------------------------
+    - name: Setup OCI back-end
       run: |
-        cat > ${{ github.workspace }}/ORCH/versions.tf << 'EOF'
+        cat > ${{ github.workspace }}/ORCH/providers.tf <<'EOF'
         terraform {
+          required_version = ">= 1.6"
           required_providers {
             azurerm = {
               source  = "hashicorp/azurerm"
@@ -90,14 +99,17 @@ jobs:
               source  = "hashicorp/null"
               version = "~> 3.2"
             }
+            oci = {
+              source = "oracle/oci"
+              version = "~> 5.0"
+            }
           }
-          required_version = ">= 1.6"
 
           backend "oci" {
             bucket    = "__BUCKET__"
             namespace = "__NAMESPACE__"
-            auth      = "InstancePrincipal"
             region    = "__REGION__"
+            auth      = "InstancePrincipal"
             key       = "azure-orchestrator.tfstate"
           }
         }
@@ -105,18 +117,24 @@ jobs:
         provider "azurerm" {
           features {}
         }
+
+        provider "oci" {
+          auth = "InstancePrincipal"
+        }
         EOF
 
         sed -i "s|__BUCKET__|${{ vars.OCI_TF_STATE_BUCKET }}|g" \
-               ${{ github.workspace }}/ORCH/versions.tf
+               ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__NAMESPACE__|${{ vars.OCI_TF_STATE_NAMESPACE }}|g" \
-               ${{ github.workspace }}/ORCH/versions.tf
-        sed -i "s|__REGION__|${{ vars.OCI_REGION }}|g" \
-               ${{ github.workspace }}/ORCH/versions.tf
+               ${{ github.workspace }}/ORCH/providers.tf
+        sed -i "s|__REGION__|${{ vars.REGION }}|g" \
+               ${{ github.workspace }}/ORCH/providers.tf
 
-        terraform fmt ${{ github.workspace }}/ORCH/versions.tf
+        terraform fmt ${{ github.workspace }}/ORCH/providers.tf
 
-        # Generate SSH key idempotently
+    # ------------------------------------------------------------------
+    # 6.  SSH key (unchanged)
+    # ------------------------------------------------------------------
     - name: Generate SSH Key
       id: ssh-key
       run: |
@@ -126,14 +144,15 @@ jobs:
         fi
         echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
-    # Terraform Init
+    # ------------------------------------------------------------------
+    # 7.  Terraform workflow (unchanged)
+    # ------------------------------------------------------------------
     - name: Terraform Init
       id: init
       run: |
         cd ${{ github.workspace }}/ORCH
         terraform init
 
-    # Terraform Format (PR only)
     - name: Terraform Format
       id: format
       if: github.ref != 'refs/heads/main'
@@ -141,7 +160,6 @@ jobs:
         cd ${{ github.workspace }}/ORCH
         terraform fmt -check
 
-    # Terraform Validate (PR only)
     - name: Terraform Validate
       id: validate
       if: github.ref != 'refs/heads/main' && (success() || failure())
@@ -149,7 +167,6 @@ jobs:
         cd ${{ github.workspace }}/ORCH
         terraform validate -no-color
 
-    # Terraform Plan (PR only)
     - name: Terraform Plan
       id: plan
       if: github.event_name == 'pull_request'
@@ -162,9 +179,8 @@ jobs:
       env:
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
 
-    # Post plan summary as PR comment
     - name: Update Pull Request
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       if: github.event_name == 'pull_request' && (success() || failure())
       env:
         PLAN: "${{ steps.plan.outputs.stdout }}"
@@ -192,12 +208,10 @@ jobs:
             body: output
           })
 
-    # Fail if plan failed
     - name: Terraform Plan Status
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
-    # Terraform Apply (push to main only)
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |

@@ -40,3 +40,6 @@ terraform.rc
 *.tfvars
 *.tfvars.json
 credentials.auto.tfvars.json
+
+# vs code
+.vscode/

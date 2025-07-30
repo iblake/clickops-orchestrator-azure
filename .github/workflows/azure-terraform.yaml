@@ -1,12 +1,16 @@
-name: Azure Terraform pipeline (OCI back-end)
+# .github/workflows/azure-terraform-gitops.yml
+# GitOps 100 %: apply sólo tras PR mergeado y plan validado
+name: Azure Terraform GitOps (OCI back-end)
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
       - 'azure/**'
-  pull_request:
+  pull_request_target:   # para que el apply corra cuando el PR se cierre
+    types:
+      - closed
     branches:
       - main
     paths:
@@ -30,17 +34,13 @@ env:
   CORE_MODULE_VERSION: v0.0.17
 
 jobs:
-  projects:
-    name: project
+  terraform:
+    name: Terraform
     runs-on: self-hosted
     permissions:
-      pull-requests: write
       contents: read
-
+      pull-requests: write
     steps:
-    # ------------------------------------------------------------------
-    # 1. Checkout & tooling
-    # ------------------------------------------------------------------
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -49,16 +49,9 @@ jobs:
       with:
         node-version: '20'
 
-    # ------------------------------------------------------------------
-    # 2. Clone Azure orchestrator
-    # ------------------------------------------------------------------
-    - name: Clone Orchestrator Module
-      run: |
-        git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+    - name: Clone Azure Orchestrator
+      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
-    # ------------------------------------------------------------------
-    # 3. Azure credentials
-    # ------------------------------------------------------------------
     - name: Export ARM credentials
       run: |
         echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
@@ -74,18 +67,12 @@ jobs:
           --tenant ${{ secrets.ARM_TENANT_ID }}
         az account set --subscription ${{ secrets.ARM_SUBSCRIPTION_ID }}
 
-    # ------------------------------------------------------------------
-    # 4. Terraform binary
-    # ------------------------------------------------------------------
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.12.1
+        terraform_version: 1.9.8
         terraform_wrapper: true
 
-    # ------------------------------------------------------------------
-    # 5. Render versions.tf from template
-    # ------------------------------------------------------------------
     - name: Render versions.tf from template
       working-directory: ${{ github.workspace }}/ORCH
       run: |
@@ -96,65 +83,54 @@ jobs:
         OCI_TF_STATE_NAMESPACE: ${{ vars.OCI_TF_STATE_NAMESPACE }}
         OCI_REGION:             ${{ vars.OCI_REGION }}
 
-    # ------------------------------------------------------------------
-    # 6. SSH key
-    # ------------------------------------------------------------------
-    - name: Generate SSH Key
-      id: ssh-key
-      run: |
-        KEY_PATH="$HOME/.ssh/azure_vm_key"
-        if [ ! -f "$KEY_PATH" ]; then
-          ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
-        fi
-        echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
-
-    # ------------------------------------------------------------------
-    # 7. Terraform workflow
-    # ------------------------------------------------------------------
     - name: Terraform Init
-      id: init
       run: |
         cd ${{ github.workspace }}/ORCH
         terraform init
 
     - name: Terraform Format
-      id: format
-      if: github.ref != 'refs/heads/main'
+      if: github.event_name == 'pull_request'
       run: |
         cd ${{ github.workspace }}/ORCH
         terraform fmt -check
 
     - name: Terraform Validate
-      id: validate
-      if: github.ref != 'refs/heads/main' && (success() || failure())
+      if: github.event_name == 'pull_request'
       run: |
         cd ${{ github.workspace }}/ORCH
         terraform validate -no-color
 
     - name: Terraform Plan
-      id: plan
       if: github.event_name == 'pull_request'
+      id: plan
       run: |
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
         echo "$VARS"
-        terraform plan -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        terraform plan -detailed-exitcode -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        echo "plan-exit-code=$?" >> $GITHUB_OUTPUT
       env:
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
 
-    - name: Update Pull Request
+    - name: Upload plan artifact
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-plan
+        path: ${{ github.workspace }}/ORCH/tfplan.binary
+
+    - name: Post PR comment
+      if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
-      if: github.event_name == 'pull_request' && (success() || failure())
       env:
-        PLAN: "${{ steps.plan.outputs.stdout }}"
+        PLAN: ${{ steps.plan.outputs.stdout }}
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const output = `#### Terraform Format and Style 🖌\`${{ steps.format.outcome }}\`
-          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+          const output = `#### Terraform Format 🖌 \`${{ steps.format.outcome }}\`
+          #### Terraform Validate 🤖 \`${{ steps.validate.outcome }}\`
+          #### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
 
           <details><summary>Show Plan</summary>
 
@@ -164,25 +140,32 @@ jobs:
 
           </details>
 
-          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+          *Pushed by: @${{ github.actor }}*`;
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: output
-          })
+          });
 
-    - name: Terraform Plan Status
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
+    - name: Generate SSH key
+      id: ssh-key
+      run: |
+        KEY_PATH="$HOME/.ssh/azure_vm_key"
+        if [ ! -f "$KEY_PATH" ]; then
+          ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
+        fi
+        echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: Terraform Apply (on PR merge)
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true
       run: |
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
-        echo "$VARS"
         terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
       env:
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}

@@ -61,7 +61,8 @@ jobs:
               
     # Gather Orchestrator Module
     - name: 'Clone Orchestrator Module'
-      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+      run: git clone --branch feature/orchestrator-modular --single-branch https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+
 
     # Azure Login using OIDC
     - name: 'Setup Azure Authentication'

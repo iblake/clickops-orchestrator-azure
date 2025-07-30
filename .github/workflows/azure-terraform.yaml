@@ -79,12 +79,15 @@ jobs:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Generate SSH Key for VM Access
+    # Generate SSH Key for VM Access (idempotent)
     - name: 'Generate SSH Key for VM'
       id: ssh-key
       run: |
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
-        echo "SSH_PUBLIC_KEY=$(cat ~/.ssh/azure_vm_key.pub)" >> $GITHUB_OUTPUT
+        KEY_PATH="$HOME/.ssh/azure_vm_key"
+        if [ ! -f "$KEY_PATH" ]; then
+          ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
+        fi
+        echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
     # Landing Zone Terraform Orchestrator and Base Modules initialization
     - name: 'Terraform Init'

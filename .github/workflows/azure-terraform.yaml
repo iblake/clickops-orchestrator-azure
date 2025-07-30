@@ -42,7 +42,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # Node (optional for auxiliary scripts)
+    # Node
     - name: Setup Node
       uses: actions/setup-node@v2
       with:
@@ -50,7 +50,7 @@ jobs:
 
     # Clone orchestrator module
     - name: Clone Orchestrator Module
-      run: git clone --branch feature/orchestrator-modular --single-branch https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
     # Export ARM Service-Principal credentials (no OIDC)
     - name: Export ARM credentials

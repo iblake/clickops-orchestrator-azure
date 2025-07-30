@@ -5,12 +5,12 @@ on:
     branches:
       - main
     paths:
-      - 'azure/**'  
+      - 'azure/**'
   pull_request:
     branches:
       - main
     paths:
-    - 'azure/**' 
+      - 'azure/**'
 
   workflow_dispatch:
     inputs:
@@ -22,65 +22,53 @@ on:
         options:
           - dev
           - staging
-          - prod 
-
-# env:
-  #TF_LOG: INFO
+          - prod
 
 jobs:
- projects:
-    name: 'project'
+  projects:
+    name: project
     env:
-     TF_ACTION_WORKSPACE: "default"
-    # Operational scenario
-     SCENARIO: azure
-     CORE_MODULE_VERSION: v0.0.17
-            
-    # runs-on: ubuntu-latest
+      TF_ACTION_WORKSPACE: default
+      SCENARIO: azure
+      CORE_MODULE_VERSION: v0.0.17
+
     runs-on: self-hosted
     permissions:
-      id-token: write
       pull-requests: write
-      actions: read
       contents: read
-    
+
     steps:
-    # Checkout the repository to the GitHub Actions runner
-    - name: 'Checkout'
+    # Checkout the repository
+    - name: Checkout
       uses: actions/checkout@v4
 
-    # Runner package dependencies
-    - uses: actions/setup-node@v2
+    # Node (optional for auxiliary scripts)
+    - name: Setup Node
+      uses: actions/setup-node@v2
       with:
-        node-version: '20'  
-    
-    # Runner setup - ENABLE WHILE USING CHECKOV
-    # - name: Install Checkov
-    #   run: |
-    #     sudo dnf install python3.9-pip python3-setuptools python3-pip-wheel -y
-    #     pip install checkov
-              
-    # Gather Orchestrator Module
-    - name: 'Clone Orchestrator Module'
+        node-version: '20'
+
+    # Clone orchestrator module
+    - name: Clone Orchestrator Module
       run: git clone --branch feature/orchestrator-modular --single-branch https://github.com/iblake/clickops-orchestrator-azure.git ORCH
 
-    # Azure Login without OIDC
-    - name: Export ARM Service Principal credentials
+    # Export ARM Service-Principal credentials (no OIDC)
+    - name: Export ARM credentials
       run: |
         echo "ARM_CLIENT_ID=${{ secrets.ARM_CLIENT_ID }}" >> $GITHUB_ENV
         echo "ARM_CLIENT_SECRET=${{ secrets.ARM_CLIENT_SECRET }}" >> $GITHUB_ENV
         echo "ARM_TENANT_ID=${{ secrets.ARM_TENANT_ID }}" >> $GITHUB_ENV
         echo "ARM_SUBSCRIPTION_ID=${{ secrets.ARM_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
 
-    # Setup Terraform Binary
-    - name: 'Setup Terraform'
+    # Install Terraform
+    - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Generate SSH Key for VM Access (idempotent)
-    - name: 'Generate SSH Key for VM'
+    # Generate SSH key idempotently
+    - name: Generate SSH Key
       id: ssh-key
       run: |
         KEY_PATH="$HOME/.ssh/azure_vm_key"
@@ -89,64 +77,53 @@ jobs:
         fi
         echo "SSH_PUBLIC_KEY=$(cat $KEY_PATH.pub)" >> $GITHUB_OUTPUT
 
-    # Landing Zone Terraform Orchestrator and Base Modules initialization
-    - name: 'Terraform Init'
+    # Terraform Init
+    - name: Terraform Init
       id: init
       run: |
-       cd ${{ github.workspace }}/ORCH
-       terraform init
+        cd ${{ github.workspace }}/ORCH
+        terraform init
       env:
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_USE_OIDC: true
-    
-    # Integration: Terraform Format
-    - name: 'Terraform Format'
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+    # Terraform Format (PR only)
+    - name: Terraform Format
       id: format
       if: github.ref != 'refs/heads/main'
       run: |
-       cd ${{ github.workspace }}/ORCH
-       terraform fmt -check
-      
-    # Test: Terraform Validate
-    - name: 'Terraform Validate'
+        cd ${{ github.workspace }}/ORCH
+        terraform fmt -check
+
+    # Terraform Validate (PR only)
+    - name: Terraform Validate
       id: validate
       if: github.ref != 'refs/heads/main' && (success() || failure())
       run: |
-       cd ${{ github.workspace }}/ORCH
-       terraform validate -no-color
-      
-    # Integration: Terraform Plan
-    - name: 'Terraform Plan'
+        cd ${{ github.workspace }}/ORCH
+        terraform validate -no-color
+
+    # Terraform Plan (PR only)
+    - name: Terraform Plan
       id: plan
       if: github.event_name == 'pull_request'
       run: |
-       cd ${{ github.workspace }}/ORCH
-       SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-       VARS=`find $SCENARIO_DIR -name *json`
-       echo $VARS
-       #export TF_LOG=DEBUG
-       terraform plan -no-color `for i in $VARS; do echo "-var-file $i"; done` --out tfplan.binary
+        cd ${{ github.workspace }}/ORCH
+        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+        VARS=$(find $SCENARIO_DIR -name '*.json')
+        echo "$VARS"
+        terraform plan -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
       env:
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_USE_OIDC: true
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
-      # continue-on-error: true
 
-    # Run Checkov against configuration - DISABLED UNTIL OSSA APPROVAL
-    # - name: Checkov
-    #   id: checkov
-    #   if: success()
-    #   run: |
-    #     cd ${{ github.workspace }}/ORCH
-    #     terraform show -json tfplan.binary | jq '.' > tfplan.json
-    #     checkov -f tfplan.json --framework terraform_plan -o sarif
-
-    # Send result of testing & integration to the pull request information issue
-    - name: 'Update Pull Request'
+    # Post plan summary as PR comment
+    - name: Update Pull Request
       uses: actions/github-script@v6
       if: github.event_name == 'pull_request' && (success() || failure())
       env:
@@ -155,24 +132,18 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const output = `#### Terraform Format and Style 🖌\`${{ steps.format.outcome }}\`
-          #### Terraform Initialization ⚙️\`${{ steps.init.outcome}}\`
+          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
           #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-          ### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-          
+          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
           <details><summary>Show Plan</summary>
-          
-          \`\`\`terraform\n
+
+          \`\`\`terraform
           ${process.env.PLAN}
           \`\`\`
-          
-          </details>
-
-          <details><summary>Show Checkov Results</summary>
-
-          ${process.env.CHECKOV_RESULTS}
 
           </details>
-          
+
           *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
           github.rest.issues.createComment({
             issue_number: context.issue.number,
@@ -180,26 +151,24 @@ jobs:
             repo: context.repo.repo,
             body: output
           })
-    
-    # Integration: Show fail status if plan failed
-    - name: 'Terraform Plan Status'
+
+    # Fail if plan failed
+    - name: Terraform Plan Status
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
-    # Deployment: Terraform apply when merge request
+    # Terraform Apply (push to main only)
     - name: Terraform Apply
-      #if: github.event.pull_request.merged == true && github.event.action == 'closed'
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-       cd ${{ github.workspace }}/ORCH
-       SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-       VARS=`find $SCENARIO_DIR -name *json`
-       echo $VARS
-       terraform apply -no-color `for i in $VARS; do echo "-var-file $i"; done` --auto-approve
+        cd ${{ github.workspace }}/ORCH
+        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+        VARS=$(find $SCENARIO_DIR -name '*.json')
+        echo "$VARS"
+        terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
       env:
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_USE_OIDC: true
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
         TF_VAR_vm_ssh_public_key: ${{ steps.ssh-key.outputs.SSH_PUBLIC_KEY }}
-      continue-on-error: false

@@ -1,0 +1,26 @@
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.37"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
+  }
+  required_version = ">= 1.6"
+  
+  backend "oci" {
+    bucket    = "${OCI_TF_STATE_BUCKET}"
+    namespace = "${OCI_TF_STATE_NAMESPACE}"
+    auth      = "InstancePrincipal"
+    region    = "${OCI_REGION}"
+    key       = "azure-terraform.tfstate"
+  }
+}
+
+provider "azurerm" {
+  features {}
+  # Azure credentials are read from ARM_* environment variables automatically
+}

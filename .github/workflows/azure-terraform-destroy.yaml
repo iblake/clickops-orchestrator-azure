@@ -1,0 +1,127 @@
+name: Azure Terraform Destroy (OCI back-end)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to destroy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      confirm_destroy:
+        description: "Type 'DESTROY' to confirm deletion of all infrastructure"
+        required: true
+        type: string
+
+jobs:
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    steps:
+    - name: Validate Confirmation
+      run: |
+        if [ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]; then
+          echo "❌ Confirmation failed. You must type 'DESTROY' exactly to proceed."
+          echo "Received: '${{ github.event.inputs.confirm_destroy }}'"
+          exit 1
+        fi
+        echo "✅ Confirmation validated"
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Clone Azure Orchestrator
+      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+
+    - name: Load Runner Environment
+      run: |
+        # Load variables from runner environment (more secure)
+        source $HOME/.github-runner-env
+        echo "✅ ARM credentials loaded from runner environment"
+        echo "✅ OCI backend credentials loaded from runner environment"
+
+    - name: Azure CLI Login
+      run: |
+        # Use variables from runner environment
+        source $HOME/.github-runner-env
+        az login --service-principal \
+          --username "$ARM_CLIENT_ID" \
+          --password "$ARM_CLIENT_SECRET" \
+          --tenant "$ARM_TENANT_ID" > /dev/null 2>&1
+        az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null 2>&1
+        echo "✅ Azure login successful"
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.12.1
+        terraform_wrapper: true
+
+    - name: Render versions.tf from template
+      run: |
+        # Use variables from runner environment
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        envsubst < versions.tf.template > versions.tf
+        terraform fmt versions.tf
+        echo "✅ Backend configuration generated"
+
+    - name: Terraform Init
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        terraform init
+        echo "✅ Terraform initialized with OCI backend"
+
+    - name: Validate SSH Key Availability (OCI Pattern)
+      id: ssh-key
+      run: |
+        SSH_KEY_PATH="$HOME/.ssh/azure_vm_key.pub"
+        if [ ! -f "$SSH_KEY_PATH" ]; then
+          echo "SSH public key not found at $SSH_KEY_PATH"
+          echo "Please ensure your self-hosted runner has SSH keys configured"
+          echo "Run: ssh-keygen -t rsa -b 4096 -f $HOME/.ssh/azure_vm_key -N ''"
+          exit 1
+        fi
+        echo "✅ SSH key found and ready"
+
+    - name: Show Current Infrastructure
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        CONFIG_DIR=${{ github.workspace }}/config
+        VARS=$(find $CONFIG_DIR -name '*.json')
+        
+        echo "🔍 Showing current infrastructure state..."
+        terraform show -no-color || echo "No state file found or empty state"
+
+    - name: Terraform Destroy
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        CONFIG_DIR=${{ github.workspace }}/config
+        VARS=$(find $CONFIG_DIR -name '*.json')
+        
+        echo "🔥 WARNING: DESTROYING ALL INFRASTRUCTURE"
+        echo "Environment: ${{ github.event.inputs.env }}"
+        echo "Confirmation: ${{ github.event.inputs.confirm_destroy }}"
+        echo "Working directory: $(pwd)"
+        echo "Config files: $VARS"
+        echo ""
+        
+        terraform destroy -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
+        
+        echo ""
+        echo "✅ Infrastructure destruction completed"
+        echo "🎯 All Azure resources have been removed"

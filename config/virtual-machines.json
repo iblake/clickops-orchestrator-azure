@@ -1,0 +1,28 @@
+{
+  "virtual_machines": {
+    "vm-web": {
+      "resource_group_key": "rg-demo",
+      "network_key": "vnet-demo",
+      "subnet_key": "subnet-public",
+      "security_group_key": "nsg-web",
+      "name": "vm-web-dgc00",
+      "size": "Standard_B1s",
+      "admin_username": "azureuser",
+      "ssh_key_path": "~/.ssh/azure_vm_key.pub",
+      "create_public_ip": true,
+      "public_ip_sku": "Basic"
+    },
+      "vm-web2": {
+      "resource_group_key": "rg-demo",
+      "network_key": "vnet-demo",
+      "subnet_key": "subnet-public",
+      "security_group_key": "nsg-web",
+      "name": "vm-web-test00",
+      "size": "Standard_B1s",
+      "admin_username": "azureuser",
+      "ssh_key_path": "~/.ssh/azure_vm_key.pub",
+      "create_public_ip": true,
+      "public_ip_sku": "Basic"
+    }
+  }
+}

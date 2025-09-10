@@ -1,0 +1,165 @@
+name: Azure Terraform GitOps (OCI back-end)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'config/**'
+      - '*.tf'
+  pull_request_target:
+    types:
+      - closed
+    branches:
+      - main
+    paths:
+      - 'config/**'
+      - '*.tf'
+
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Clone Azure Orchestrator
+      run: git clone https://github.com/iblake/clickops-orchestrator-azure.git ORCH
+
+    - name: Load Runner Environment
+      run: |
+        # Load variables from runner environment (more secure)
+        source $HOME/.github-runner-env
+        echo "✅ ARM credentials loaded from runner environment"
+
+    - name: Azure CLI Login
+      run: |
+        # Use variables from runner environment
+        source $HOME/.github-runner-env
+        az login --service-principal \
+          --username "$ARM_CLIENT_ID" \
+          --password "$ARM_CLIENT_SECRET" \
+          --tenant "$ARM_TENANT_ID" > /dev/null 2>&1
+        az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null 2>&1
+        echo "✅ Azure login successful"
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.12.1
+        terraform_wrapper: true
+
+    - name: Render versions.tf from template
+      run: |
+        # Use variables from runner environment
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        envsubst < versions.tf.template > versions.tf
+        terraform fmt versions.tf
+
+    - name: Terraform Init
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        terraform init
+
+    - name: Terraform Format
+      if: github.event_name == 'pull_request'
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        terraform fmt -check
+
+    - name: Terraform Validate
+      if: github.event_name == 'pull_request'
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        terraform validate -no-color
+
+    - name: Validate SSH Key Availability (OCI Pattern)
+      id: ssh-key
+      run: |
+        SSH_KEY_PATH="$HOME/.ssh/azure_vm_key.pub"
+        if [ ! -f "$SSH_KEY_PATH" ]; then
+          echo "SSH public key not found at $SSH_KEY_PATH"
+          echo "Please ensure your self-hosted runner has SSH keys configured"
+          echo "Run: ssh-keygen -t rsa -b 4096 -f $HOME/.ssh/azure_vm_key -N ''"
+          exit 1
+        fi
+        echo "SSH key found and ready"
+        echo "SSH_PUBLIC_KEY=$(cat $SSH_KEY_PATH)" >> $GITHUB_OUTPUT
+
+    - name: Terraform Plan
+      if: github.event_name == 'pull_request'
+      id: plan
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        CONFIG_DIR=${{ github.workspace }}/config
+        VARS=$(find $CONFIG_DIR -name '*.json')
+        echo "$VARS"
+        terraform plan -detailed-exitcode -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        echo "plan-exit-code=$?" >> $GITHUB_OUTPUT
+
+    - name: Post PR comment
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      env:
+        PLAN: ${{ steps.plan.outputs.stdout }}
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const output = `#### Terraform Format 🖌 \`${{ steps.format.outcome }}\`
+          #### Terraform Validate 🤖 \`${{ steps.validate.outcome }}\`
+          #### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`terraform
+          ${process.env.PLAN}
+          \`\`\`
+
+          </details>
+
+          *Pushed by: @${{ github.actor }}*`;
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+
+    - name: Terraform Apply (on PR merge)
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true
+      run: |
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        CONFIG_DIR=${{ github.workspace }}/config
+        VARS=$(find $CONFIG_DIR -name '*.json')
+        terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)

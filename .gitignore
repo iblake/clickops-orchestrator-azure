@@ -1,0 +1,51 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+tfplan
+versions.tf
+
+# Terraform variable files (may contain sensitive data)
+*.tfvars
+*.tfvars.json
+credentials.auto.tfvars.json
+
+# SSH keys (for security)
+*.pub
+*.pem
+*.key
+id_rsa*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.cursor/
+.claude/
+
+.vscode/
+.claude/
+
+CLAUDE.md   
+
+# Local environment files
+
+/templates
+/docs
+examples/

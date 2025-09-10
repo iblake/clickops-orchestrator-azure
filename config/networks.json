@@ -1,0 +1,16 @@
+{
+  "networks": {
+    "vnet-demo": {
+      "resource_group_key": "rg-demo",
+      "name": "vnet-free-demo",
+      "cidr": "10.0.0.0/16",
+      "resource_id": "/subscriptions/fb006a95-6e01-4852-8adc-c094db4da08d/resourceGroups/rg-free-demo/providers/Microsoft.Network/virtualNetworks/vnet-free-demo",
+      "subnets": {
+        "subnet-public": {
+          "name": "subnet-public",
+          "cidr": "10.0.1.0/24"
+        }
+      }
+    }
+  }
+}

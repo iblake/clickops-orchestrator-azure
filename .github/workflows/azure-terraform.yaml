@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'config/**'
-      - '*.tf'
   pull_request_target:
     types:
       - closed
@@ -14,7 +13,6 @@ on:
       - main
     paths:
       - 'config/**'
-      - '*.tf'
 
   workflow_dispatch:
     inputs:

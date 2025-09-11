@@ -55,7 +55,7 @@ Resources reference each other using descriptive keys, automatically resolved by
 {
   "virtual_machines": {
     "vm-web": {
-      "resource_group_key": "rg-demo",     // → resolves to "rg-free-demo"
+      "resource_group_key": "rg-demo",     // → resolves to "rg-demo"
       "network_key": "vnet-demo",          // → resolves to VNet resource ID
       "subnet_key": "subnet-public",       // → resolves to subnet resource ID
       "security_group_key": "nsg-web",     // → resolves to NSG resource ID
